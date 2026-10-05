@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Am'Sports – Paiement</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--text:#1b1f2a;--muted:#6b7385;--line:#e3e6ef;--accent:#2f6df6;--accent-text:#fff;--ok:#1a9a5b;--ok-bg:#e3f6ec;--due-bg:#fff1e0;--due:#c46a00;--err-bg:#fde8e8;--err:#b42318}
+@media (prefers-color-scheme:dark){:root{--bg:#12141a;--card:#1b1e27;--text:#eceef5;--muted:#9097aa;--line:#2a2e3b;--accent:#5b8cff;--accent-text:#0b1020;--ok:#4cc58a;--ok-bg:#16301f;--due-bg:#35260f;--due:#f0a24a;--err-bg:#3a1717;--err:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.45;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+main{max-width:520px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.4rem;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 20px;font-size:.95rem}
+.search{width:100%;padding:14px 16px;font-size:1rem;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);outline:none}
+.search:focus{border-color:var(--accent)}
+.list{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.row{width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;background:var(--card);border:1px solid var(--line);border-radius:12px;color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.row:hover{border-color:var(--accent)}.name{font-weight:600}.amt{color:var(--muted);font-variant-numeric:tabular-nums}
+.badge{font-size:.75rem;padding:3px 8px;border-radius:99px;font-weight:600;white-space:nowrap}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.due{background:var(--due-bg);color:var(--due)}
+.empty{color:var(--muted);text-align:center;padding:24px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;margin-top:8px}
+.card h2{margin:0 0 2px;font-size:1.2rem}.big{font-size:2.4rem;font-weight:700;margin:12px 0 4px;font-variant-numeric:tabular-nums}
+.note{color:var(--muted);font-size:.85rem;margin:6px 0 0}
+.btn{display:block;width:100%;text-align:center;padding:15px;border-radius:12px;border:0;background:var(--accent);color:var(--accent-text);font:inherit;font-weight:700;font-size:1rem;cursor:pointer;margin-top:16px}
+.btn:disabled{opacity:.6;cursor:wait}.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--line);font-weight:600;margin:0 0 12px}
+.msg{padding:12px 14px;border-radius:12px;font-weight:600;margin-bottom:16px}
+.msg.ok{background:var(--ok-bg);color:var(--ok)}.msg.err{background:var(--err-bg);color:var(--err)}.msg.wait{background:var(--due-bg);color:var(--due)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <div id="banner" class="msg" hidden></div>
+  <div id="search-view">
+    <h1>Am'Sports</h1>
+    <p class="sub">Retrouve ton nom pour voir ce que tu dois et payer en ligne.</p>
+    <input id="q" class="search" type="search" placeholder="Cherche ton nom…" autocomplete="off" aria-label="Rechercher un nom">
+    <ul id="list" class="list"></ul>
+    <div id="empty" class="empty" hidden>Aucun résultat. Vérifie l'orthographe de ton nom.</div>
+  </div>
+  <div id="detail-view" hidden>
+    <button class="btn ghost" id="back">← Retour</button>
+    <div class="card">
+      <h2 id="d-name"></h2>
+      <div class="note" id="d-ref"></div>
+      <div class="big" id="d-amount"></div>
+      <div id="d-paid" class="msg ok" hidden>✅ Paiement déjà reçu, merci !</div>
+      <div id="d-pay">
+        <button id="pay" class="btn">Payer maintenant</button>
+        <p class="note" id="pay-err" style="color:var(--err)"></p>
+        <p class="note">Paiement sécurisé sur HelloAsso. Nous ne voyons ni ne stockons aucune donnée de carte.</p>
+      </div>
+    </div>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const eur = n => new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR"}).format(n);
+let current = null, timer = null;
+
+// Message de retour après paiement
+const statut = new URLSearchParams(location.search).get("statut");
+if(statut){
+  const b = $("banner"); b.hidden = false;
+  const m = {ok:["ok","✅ Paiement reçu, merci !"],
+             attente:["wait","⏳ Ton paiement est en cours de confirmation. Recherche ton nom dans quelques minutes pour voir le statut."],
+             erreur:["err","Le paiement n'a pas abouti. Tu peux réessayer."]}[statut];
+  if(m){ b.className = "msg " + m[0]; b.textContent = m[1]; }
+  history.replaceState(null,"","/");
+}
+
+async function search(){
+  const q = $("q").value.trim(), list = $("list");
+  list.innerHTML = ""; $("empty").hidden = true;
+  if(q.length < 2) return;
+  let res = [];
+  try{ res = await (await fetch("/api/search?q="+encodeURIComponent(q))).json(); }catch(e){}
+  if($("q").value.trim() !== q) return; // réponse périmée
+  $("empty").hidden = res.length > 0;
+  for(const p of res){
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.className = "row";
+    const n = document.createElement("span"); n.className = "name"; n.textContent = p.name;
+    const r = document.createElement("span");
+    const a = document.createElement("span"); a.className = "amt"; a.textContent = eur(p.amount) + " ";
+    const bd = document.createElement("span"); bd.className = "badge " + (p.paid ? "ok" : "due"); bd.textContent = p.paid ? "Payé" : "À payer";
+    r.append(a, bd); b.append(n, r); b.onclick = () => show(p); li.appendChild(b); list.appendChild(li);
+  }
+}
+function show(p){
+  current = p;
+  $("search-view").hidden = true; $("detail-view").hidden = false;
+  $("d-name").textContent = p.name; $("d-ref").textContent = "Référence : " + p.ref;
+  $("d-amount").textContent = eur(p.amount);
+  $("d-paid").hidden = !p.paid; $("d-pay").hidden = p.paid; $("pay-err").textContent = "";
+  window.scrollTo(0,0);
+}
+$("q").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 250); });
+$("back").onclick = () => { $("detail-view").hidden = true; $("search-view").hidden = false; $("q").focus(); };
+$("pay").onclick = async () => {
+  const btn = $("pay"); btn.disabled = true; $("pay-err").textContent = "";
+  try{
+    const r = await fetch("/api/pay",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ref:current.ref})});
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.error || "Erreur");
+    location.href = j.url;
+  }catch(e){ $("pay-err").textContent = e.message; btn.disabled = false; }
+};
+</script>
+</body>
+</html>

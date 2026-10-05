@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: amsports-paiement
+    runtime: python
+    plan: starter            # le disque persistant demande un plan payant
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /healthz
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DB_PATH
+        value: /data/data.db
+      - key: BASE_URL
+        sync: false
+      - key: HELLOASSO_ORG_SLUG
+        sync: false
+      - key: HELLOASSO_CLIENT_ID
+        sync: false
+      - key: HELLOASSO_CLIENT_SECRET
+        sync: false
+      - key: SHEET_CSV_URL
+        sync: false
+      - key: HELLOASSO_API_BASE
+        value: https://api.helloasso-sandbox.com   # passe à https://api.helloasso.com en production
